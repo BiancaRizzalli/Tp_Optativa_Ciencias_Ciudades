@@ -1,15 +1,15 @@
 library(jsonlite)
 library(dplyr)
 library(data.table)
-library(ggplot2)
 library(readxl)
 
 # --- PASO 1: Carga y Limpieza de Datos ---
 
 # Leemos la hoja 2 del excel con los datos para el practico
-# Asegúrate de que esta ruta sea correcta en tu máquina
-ruta_archivo <- "C:/FACULTAD/Cuarto/Optativa/datos_Tp1.xlsx"
-datos <- read_excel(ruta_archivo, sheet = 2)
+
+ruta <- readline(prompt = "Ingrese la ruta del archivo datos_Tp1.xlsx: ")
+print("Accediendo al archivo...")
+datos <- read_excel(ruta, sheet = 2)
 
 # Limpiamos y preparamos los datos
 datos <- datos %>%
