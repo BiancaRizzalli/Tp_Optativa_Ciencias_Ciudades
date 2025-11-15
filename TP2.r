@@ -31,11 +31,32 @@ promedio_por_persona <- promedio_por_persona %>%
                          "Actividad física, deportes",
                          motivo))
 
+# Agrupar todos los "Otra cosa: ..." en un solo motivo "Otra cosa"
+promedio_general <- promedio_general %>%
+  mutate(
+    motivo_plot = ifelse(startsWith(motivo, "Otra cosa"), "Otra cosa", motivo)
+  )
+
+promedio_por_persona <- promedio_por_persona %>%
+  mutate(
+    motivo_plot = ifelse(startsWith(motivo, "Otra cosa"), "Otra cosa", motivo)
+  )
+
+ promedio_general_plot <- promedio_general %>%
+  group_by(motivo_plot) %>%
+  summarise(
+    tiempo_promedio_general = mean(tiempo_promedio_general, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+ 
+
 print("Generando graficos...")
 
 #----------------------------------------------------------------------------------Graficar promedio general
 
-grafico_barras_general <- ggplot(promedio_general, aes(x =reorder(motivo, -tiempo_promedio_general), y = tiempo_promedio_general)) +
+grafico_barras_general <- ggplot(promedio_general_plot, aes(x =reorder(motivo_plot, -tiempo_promedio_general), y = tiempo_promedio_general)) +
     geom_bar(stat = "identity", fill = "#559FCB", width = 0.6) +
     labs(
       title = "Tiempo promedio por motivo",
@@ -60,7 +81,7 @@ datos_combinados <- promedio_por_persona %>%
 #promedio por motivo y género
 promedio_motivo_genero <- datos_combinados %>%
   filter(!is.na(Género)) %>%   #eliminar sin género
-  group_by(motivo, Género) %>%
+  group_by(motivo_plot, Género) %>%
   summarise(
     tiempo_promedio = mean(tiempo_promedio, na.rm = TRUE),
     n_personas = n(),
@@ -68,14 +89,14 @@ promedio_motivo_genero <- datos_combinados %>%
   )
 #Creamos la manera de ordenar de mayor a menor
 orden_motivos <- promedio_motivo_genero %>%
-  group_by(motivo) %>%
+  group_by(motivo_plot) %>%
   summarise(promedio_total = mean(tiempo_promedio, na.rm = TRUE)) %>%
   arrange(desc(promedio_total)) %>%
-  pull(motivo) #Agarra la columna motivo como un vector
+  pull(motivo_plot) #Agarra la columna motivo como un vector
 
 
 #Realizamos grafico de barra por motivo clasificando el genero
-grafico_por_genero <- ggplot(promedio_motivo_genero, aes(x =factor( motivo, levels = orden_motivos), y = tiempo_promedio, fill = Género)) +
+grafico_por_genero <- ggplot(promedio_motivo_genero, aes(x =factor( motivo_plot, levels = orden_motivos), y = tiempo_promedio, fill = Género)) +
   geom_bar(stat = "identity", position = "dodge", width = 0.6) +
   labs(
     title = "Tiempo promedio por motivo y género",

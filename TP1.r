@@ -1,12 +1,13 @@
 library(jsonlite)
 library(dplyr)
 library(data.table)
+library(ggplot2)
 library(readxl)
 
 # --- PASO 1: Carga y Limpieza de Datos ---
 
 # Leemos la hoja 2 del excel con los datos para el practico
-
+# Asegúrate de que esta ruta sea correcta en tu máquina
 ruta <- readline(prompt = "Ingrese la ruta del archivo datos_Tp1.xlsx: ")
 print("Accediendo al archivo...")
 datos <- read_excel(ruta, sheet = 2)
@@ -35,23 +36,9 @@ datos <- datos %>%
 # --- FIN DEL FILTRO ---
 
 
-# # Opcional: Verificamos el resultado
-# print("Resumen de la columna Duración (Corregida y Filtrada):")
-# print(summary(datos$Duracion)) # <-- Ahora el 'max' debería ser <= 1440
-
-# print("Datos listos para el Paso 2:")
-# print(head(datos))
-
-# # Código de diagnóstico (opcional)
-# # Esto ahora debería imprimir una tabla vacía,
-# # lo que prueba que el filtro funcionó.
-# fila_error <- datos %>%
-#   filter(Duracion > 1440)
-
-# print("--- FILA CON ERROR DE DURACIÓN (debería estar vacío) ---")
-# print(fila_error)
-# print("-----------------------------------")
-
+# --- PASO 1.5: Configurar el archivo de log ---
+log_conexion <- file("log_viajes.txt", "w") # "w" = write (sobrescribir)
+cat("--- INICIO DEL LOG DE PROCESAMIENTO ---\n", file = log_conexion)
 # --- PASO 2: Creación de Estructuras de Almacenamiento ---
 
 # --- A. Constantes y Reglas ---
@@ -62,8 +49,102 @@ lista_motivos <- c(
   "Por estudio", "Por Trabajo", "Practicar deportes, correr, caminar",
   "Recreación", "Trámites", "Ver a alguien", "Volver a Casa"
 )
+#Proceso para desagregar motivo Otra cosa
+motivos_detalle <- c(
+  "Parada de colectivo",
+  "Lugares de culto, iglesia, etc.",
+  "Comercio de ropa u otro tipo de comercio de compras",
+  "Casa de parientes",
+  "Parques naturales o plaza / Campo",
+  "Estación de ómnibus o trenes",
+  "Clubes deportivos",
+  "Gimnasio y spa",
+  "Casa de amigos",
+  "Casa de padres",
+  "Teatro o cine",
+  "Lugar de trabajo",
+  "Cementerio",
+  "Escuela / campus / establecimiento educativo",
+  "Restaurante",
+  "Casa de novio/a",
+  "Supermercado / despensa / verdulería / carnicería / dietética",
+  "Boliche",
+  "Organismos públicos",
+  "Taller mecánico",
+  "Sindicato / gremio / asociación civil",
+  "Organismos de servicios privados",
+  "Salón de fiestas",
+  "Banco u otra entidad financiera",
+  "Fuera de Zona Urbana",
+  "Farmacia",
+  "Hospital / clínica / centro de salud",
+  "Usina / gas del Estado / obras sanitarias / otros servicios públicos",
+  "Casino",
+  "Casa de cliente"
+)
+
+porcentajes <- c(
+  32.85,
+   9.03,
+   6.50,
+   5.42,
+   4.69,
+   4.33,
+   4.33,
+   2.89,
+   2.89,
+   2.53,
+   2.53,
+   2.17,
+   1.81,
+   1.81,
+   1.81,
+   1.44,
+   1.44,
+   1.44,
+   1.44,
+   1.08,
+   1.08,
+   1.08,
+   1.08,
+   1.08,
+   1.08,
+   0.72,
+   0.36,
+   0.36,
+   0.36,
+   0.36
+)
+
+prob_mot <- porcentajes / sum(porcentajes)   # suma = 1
+prob_acum_mot <- cumsum(prob_mot)           # vector de probabilidades acumuladas
+
+#funcion para proceso estocastico
+sortear_motivo <- function() {
+  u <- runif(1)                # 1) Genera un número entre 0 y 1
+  idx <- which(u <= prob_acum_mot)[1]   # 2) Busca en qué intervalo cae
+  motivos_detalle[idx]         # 3) Devuelve el motivo correspondiente
+}
+reasignar_otra_cosa <- function(df) {
+  idx <- which(df$`Motivo del Viaje` == "Otra cosa")
+  
+  if (length(idx) == 0) return(df)  # si no hay nada que cambiar
+  
+  # Generar los nuevos motivos estocásticos
+  nuevos <- sapply(idx, function(i) sortear_motivo())
+  
+  # Reemplazar en el dataset
+  df$`Motivo del Viaje`[idx] <- paste("Otra cosa:", nuevos)
+  
+  return(df)
+}
+datos <- reasignar_otra_cosa(datos)
+
 
 lugaresBase <- c("Volver a Casa", "Al Trabajo", "Por Trabajo", "Por estudio")
+
+# (Esta lista se usa SÓLO para la condición de corte del loop)
+lugaresBase_CIERRE <- c("Volver a Casa")
 
 # --- B. Acumuladores de Resultados (Globales) ---
 # (Estos son los data frames FINALES que llenarán las funciones del Paso 4)
@@ -263,12 +344,18 @@ for (i in 1:(nrow(datos) - 1)) {
   fila_actual <- datos[i, ]
   fila_siguiente <- datos[i+1, ]
   
+  # --- Log: Imprimir la fila actual ---
+  cat("----------------------------------\n", file = log_conexion, append = TRUE)
+  cat(paste("Fila", i, "| Persona:", fila_actual$Identificación, 
+            "| Viaje a:", fila_actual$"Motivo del Viaje", 
+            "| Duración:", round(fila_actual$Duracion, 1), "min\n"),
+      file = log_conexion, append = TRUE)
   # --- Lógica de Control ---
-  # 1. ¿El viaje siguiente es de otra persona? (FIX 2)
+  # 1. ¿El viaje siguiente es de otra persona?
   es_persona_diferente <- fila_actual$Identificación != fila_siguiente$Identificación
-  
-  # 2. ¿El viaje actual es a un lugar base?
-  es_viaje_a_base <- fila_actual$"Motivo del Viaje" %in% lugaresBase
+ 
+  # 2. ¿El viaje actual es a una base de CIERRE? (Usa la nueva lista)
+  es_viaje_a_cierre <- fila_actual$"Motivo del Viaje" %in% lugaresBase_CIERRE
   
   
   # --- ACUMULAR DATOS DEL VIAJE Y ACTIVIDAD ---
@@ -289,12 +376,16 @@ for (i in 1:(nrow(datos) - 1)) {
     }
     
     # Si es tipo 4 pero el tiempo de act es 0, lo tomamos como tipo 3
-    if (tiempoAct > 0){
+    if (tiempoAct > 0 && !es_viaje_a_cierre){
       actividades_journey_actual <- rbind(actividades_journey_actual, data.frame(
         motivo = fila_actual$"Motivo del Viaje", 
         tiempo = tiempoAct,
         persona = fila_actual$"Identificación"
       ))
+
+      cat(paste("  -> Acumulada Actividad:", fila_actual$"Motivo del Viaje", 
+                "por", round(tiempoAct, 1), "min\n"),
+          file = log_conexion, append = TRUE)
     }
   }
 
@@ -304,8 +395,25 @@ for (i in 1:(nrow(datos) - 1)) {
   # 1. El viaje actual era 'Volver a Casa' (o a otro 'lugarBase')
   # 2. El siguiente viaje es de una persona diferente.
   
-  if (es_viaje_a_base || es_persona_diferente) {
-    
+  if (es_viaje_a_cierre || es_persona_diferente) {
+    # --- Log: Fin de journey detectado ---
+    # *** AÑADIR ESTAS LÍNEAS (justo al entrar al if) ***
+    cat("\n*** FIN DE JOURNEY DETECTADO ***\n", file = log_conexion, append = TRUE)
+    cat(paste("  Viajes Acumulados (min):", paste(round(tiempoViajes_journey_actual, 1), collapse = ", "), "\n"), 
+        file = log_conexion, append = TRUE)
+    if(nrow(actividades_journey_actual) > 0){
+        cat(paste("  Actividades Acumuladas:", paste(actividades_journey_actual$motivo, collapse = ", "), "\n"), 
+            file = log_conexion, append = TRUE)
+    }
+    # --- Chequeo de seguridad: no procesar journeys vacíos ---
+    if (length(tiempoViajes_journey_actual) == 0 || nrow(actividades_journey_actual) == 0) {
+      # Reiniciar y saltar al siguiente
+      tiempoViajes_journey_actual <- c()
+      actividades_journey_actual <- data.frame(motivo=character(), tiempo=numeric(), persona=character())
+      next # Salta a la siguiente iteración del loop
+    }
+    # --- Fin chequeo ---
+
     # --- PROCESAR EL JOURNEY ACUMULADO ---
     
     # ¿El journey tocó una base intermedia?
@@ -318,12 +426,12 @@ for (i in 1:(nrow(datos) - 1)) {
       if (nrow(actividades_journey_actual) == 1) {
         # TIPO 3: Home-Base-Home (1 sola actividad = en la base)
         journalTipo3(tiempoViajes_journey_actual, actividades_journey_actual)
-        
+        cat("  -> CLASIFICACIÓN: TIPO 3\n\n", file = log_conexion, append = TRUE) # <-- AÑADIR
       } else {
         # TIPO 4 o 5: Home-Base-Activity...-Home
         # (Tu lógica interna del 'for (j in...' era para esto)
         # Es más simple guardarlos para el final.
-        
+        cat("  -> CLASIFICACIÓN: TIPO 4/5 (Guardado)\n\n", file = log_conexion, append = TRUE) # <-- AÑADIR
         # Guardamos en la lista (reemplaza tu 'rbind' a 'journeys4y5')
         journeys4y5_pendientes[[length(journeys4y5_pendientes) + 1]] <- list(
           viajes = tiempoViajes_journey_actual,
@@ -339,10 +447,11 @@ for (i in 1:(nrow(datos) - 1)) {
       if (length(tiempoViajes_journey_actual) == 2) {
         # TIPO 1: Home-Activity-Home (2 viajes, 1 actividad)
         journalTipo1(tiempoViajes_journey_actual, actividades_journey_actual)
-        
+        cat("  -> CLASIFICACIÓN: TIPO 1\n\n", file = log_conexion, append = TRUE) # <-- AÑADIR
       } else if (length(tiempoViajes_journey_actual) > 2) {
         # TIPO 2: Home-Activity1-Activity2...-Home
         journalTipo2(tiempoViajes_journey_actual, actividades_journey_actual)
+        cat("  -> CLASIFICACIÓN: TIPO 2\n\n", file = log_conexion, append = TRUE) # <-- AÑADIR
       }
       # Si length < 2 (solo 1 viaje), es un journey incompleto. Lo ignoramos.
     }
@@ -419,7 +528,11 @@ print("--- Promedio General (Toda la Base) ---")
 print(promedioGeneral_final)
 
 print("--- SCRIPT COMPLETADO ---")
+# --- PASO 7: Cerrar el log ---
+cat("--- FIN DEL LOG ---\n", file = log_conexion, append = TRUE)
+close(log_conexion)
 
+print("--- SCRIPT COMPLETADO (y log guardado en 'log_viajes.txt') ---")
 
 #Ahora guardamos los resultados en un excel:
 library(writexl)
