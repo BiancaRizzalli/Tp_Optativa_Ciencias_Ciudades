@@ -240,4 +240,49 @@ grafico_torta <- ggplot(distribucion_rangos, aes(x = "", y = porcentaje, fill = 
     plot.title = element_text(hjust = 0.5)
   )
 
-ggsave("grafico_torta.png", grafico_torta, width = 10, height = 10)  # más ancho que alto
+ggsave("grafico_torta.png", grafico_torta, width = 10, height = 10)  
+
+
+# GRAFICO: Tiempo promedio por cada subtipo de "Otra cosa"
+
+# Filtrar solo motivos que empiecen con "Otra cosa:"
+otros_detalle <- promedio_por_persona %>%
+  filter(startsWith(motivo, "Otra cosa:")) %>%
+  group_by(motivo) %>%
+  summarise(
+    tiempo_promedio = mean(tiempo_promedio, na.rm = TRUE),
+    n_personas = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(tiempo_promedio))
+
+# Quitar el prefijo "Otra cosa: " para mostrar más limpio en el gráfico
+otros_detalle <- otros_detalle %>%
+  mutate(
+    motivo_limpio = sub("Otra cosa:\\s*", "", motivo)
+  )
+
+# Gráfico de barras
+grafico_otros_detalle <- ggplot(otros_detalle,
+                                aes(x = reorder(motivo_limpio, -tiempo_promedio),
+                                    y = tiempo_promedio)) +
+  geom_bar(stat = "identity", fill = "#A77DC2", width = 0.6) +
+  labs(
+    title = "Tiempo promedio por tipo específico dentro de 'Otra cosa'",
+    x = "Motivo",
+    y = "Tiempo promedio (minutos)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.margin = margin(15, 20, 15, 20)
+  )
+
+# Guardar el gráfico (más ancho para que no se aplasten las barras)
+ggsave(
+  "grafico_otros_detalle.png",
+  grafico_otros_detalle,
+  width = 15,
+  height = 7
+)
